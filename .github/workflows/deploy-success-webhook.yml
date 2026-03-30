@@ -1,0 +1,47 @@
+name: Deploy Success Webhook
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send deploy success event
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_SUCCESS_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.DEPLOY_SUCCESS_WEBHOOK_SECRET }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "DEPLOY_SUCCESS_WEBHOOK_URL not configured, skipping"
+            exit 0
+          fi
+          BODY=$(cat <<JSON
+          {
+            "source": "github-actions",
+            "repo": "$REPO",
+            "branch": "$BRANCH",
+            "commit": "$SHA",
+            "actor": "$ACTOR",
+            "status": "success"
+          }
+JSON
+)
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -binary | xxd -p -c 256)"
+            curl -sS -X POST "$WEBHOOK_URL" \
+              -H "content-type: application/json" \
+              -H "x-hub-signature-256: $SIG" \
+              -H "x-source: github-actions" \
+              --data "$BODY"
+          else
+            curl -sS -X POST "$WEBHOOK_URL" \
+              -H "content-type: application/json" \
+              -H "x-source: github-actions" \
+              --data "$BODY"
+          fi
